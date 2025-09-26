@@ -7,6 +7,5 @@ requires-python = ">=3.11"
 dependencies = [
     "dotenv>=0.9.9",
     "ipdb>=0.13.13",
-    "python-vlc>=3.0.21203",
     "requests>=2.32.5",
 ]
