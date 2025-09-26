@@ -1,19 +1,19 @@
+import datetime
+import json
 import os
+import random
+import subprocess
+import time
 
 import dotenv
 import requests
-
-import pprint
-import ipdb
-
-import subprocess
 
 
 dotenv.load_dotenv()
 
 API_BASE_URL = "https://mirlo.space/v1"
 
-GENRES = ["pop", "grunge", "jazz", "8-bit", "classical"]
+GENRES = ["pop", "rock", "jazz", "videogame", "ambient"]
 
 
 class AlbumPlayer:
@@ -66,20 +66,112 @@ def get_url(url: str) -> dict:
     return response.json()
 
 
+def create_db() -> dict:
+    db = {"genres": {}}
+    for genre in GENRES:
+        db["genres"][genre] = {
+            "name": genre,
+            "album_id": None,
+            "week_assigned": None,
+        }
+
+    return db
+
+
+def save_db(db: dict):
+    with open("db.json", "w") as f:
+        json.dump(db, f, indent=4)
+
+
+def get_week_id() -> int:
+    now = datetime.datetime.now(datetime.UTC)
+    year = now.year
+    week = now.isocalendar()[1]
+    return year * 100 + week
+
+
+class State:
+    SELECTING_GENRE = 0
+    PLAYING_TRACK = 1
+
+
+class Vibecube:
+    def __init__(self):
+        if os.path.exists("db.json"):
+            with open("db.json", "r") as f:
+                self.db = json.load(f)
+        else:
+            self.db = create_db()
+            save_db(self.db)
+
+        self.state = State.SELECTING_GENRE
+        self.album_player = None
+
+    def run(self):
+        if self.state == State.SELECTING_GENRE:
+            self.handle_selecting_genre()
+        else:
+            time.sleep(10)
+
+    def select_albumish(self, albums: list) -> dict:
+        random.shuffle(albums)
+
+        for album in albums:
+            total_duration = 0
+            for track in album["tracks"]:
+                print(track)
+                total_duration += track["metadata"]["format"]["duration"]
+            if total_duration >= 20 * 60:
+                return album
+
+    def find_new_album(self, genre: str) -> dict:
+        response = get_url(f"/trackGroups?tag={genre}")
+        return self.select_albumish(response["results"])
+
+    def handle_selecting_genre(self):
+        print(f"Available genres: {', '.join(GENRES)}")
+        valid = False
+
+        while not valid:
+            genre = input("Select a genre> ")
+            if genre in GENRES:
+                valid = True
+            else:
+                print("Invalid genre!")
+
+        week_id = get_week_id()
+
+        genre_info = self.db["genres"][genre]
+        if genre_info["week_assigned"] != week_id:
+            album_data = self.find_new_album(genre)
+            genre_info["album_id"] = album_data["id"]
+            genre_info["week_assigned"] = week_id
+            save_db(self.db)
+        else:
+            album_id = genre_info["album_id"]
+            album_data = get_url(f"/trackGroups/{album_id}")["result"]
+            genre_info["album_id"] = album_data["id"]
+            genre_info["week_assigned"] = week_id
+
+        self.album_player = AlbumPlayer(genre, album_data)
+        self.album_player.play_next_track()
+
+        artist_name = self.album_player.get_artist_name()
+        album_name = self.album_player.get_album_name()
+        print(f"Now playing: {artist_name} - {album_name}")
+
+        self.state = State.PLAYING_TRACK
+
+
 def main():
+    vibecube = Vibecube()
+
     while True:
-        genre = input("Give a genre> ")
+        vibecube.run()
 
-        response = get_url(f"/trackGroups?tag={genre}&orderBy=random&take=1")
-        album_data = response["results"][0]
-
-        player = AlbumPlayer(genre, album_data)
-
-        player.play_next_track()
-
-        while not player.is_finished():
-            input("Press Enter for next track!")
-            player.play_next_track()
+        # while not player.is_finished():
+        #    input("Press Enter for next track!")
+        #    player.play_next_track()
 
 
 if __name__ == "__main__":
