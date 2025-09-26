@@ -32,7 +32,7 @@ class AlbumPlayer:
         return self._album_data["artist"]["name"]
 
     def play_next_track(self):
-        if self._active_proc:
+        if self._active_proc and self._active_proc.poll() is None:
             self._active_proc.terminate()
 
         track = self._album_data["tracks"][self._track_index]
@@ -52,6 +52,11 @@ class AlbumPlayer:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+
+    def check_if_track_finished(self) -> bool:
+        if self._active_proc:
+            return self._active_proc.poll() is not None
+        return True
 
     def is_finished(self) -> bool:
         return self._track_index >= self._track_count
@@ -110,8 +115,16 @@ class Vibecube:
     def run(self):
         if self.state == State.SELECTING_GENRE:
             self.handle_selecting_genre()
-        else:
-            time.sleep(10)
+            return False
+        elif self.state == State.PLAYING_TRACK:
+            if self.album_player.check_if_track_finished():
+                if self.album_player.is_finished():
+                    print("Album finished, stopping...")
+                    return True
+                else:
+                    print("Track finished, playing next track...")
+                    self.album_player.play_next_track()
+                    return False
 
     def select_albumish(self, albums: list) -> dict:
         random.shuffle(albums)
@@ -119,8 +132,9 @@ class Vibecube:
         for album in albums:
             total_duration = 0
             for track in album["tracks"]:
-                print(track)
-                total_duration += track["metadata"]["format"]["duration"]
+                # Only count things that can be streamed (isPreview -> can be streamed)
+                if track["isPreview"]:
+                    total_duration += track["metadata"]["format"]["duration"]
             if total_duration >= 20 * 60:
                 return album
 
@@ -162,16 +176,19 @@ class Vibecube:
 
         self.state = State.PLAYING_TRACK
 
+    def skip(self):
+        if self.state == State.PLAYING_TRACK and self.album_player:
+            self.album_player.play_next_track()
+
 
 def main():
     vibecube = Vibecube()
 
     while True:
-        vibecube.run()
-
-        # while not player.is_finished():
-        #    input("Press Enter for next track!")
-        #    player.play_next_track()
+        exited = vibecube.run()
+        if exited:
+            break
+        time.sleep(1)
 
 
 if __name__ == "__main__":
