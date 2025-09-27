@@ -151,6 +151,11 @@ def main():
             print("Invalid command.")
             continue
 
+        if isinstance(command, CubeCommand):
+            if command.get_genre() not in GENRES:
+                print("Invalid genre.")
+                continue
+
         command_queue.put(command)
 
         if isinstance(command, QuitCommand):
