@@ -44,6 +44,11 @@ class AlbumPlayer:
             stderr=subprocess.DEVNULL,
         )
 
+    def stop(self):
+        if self._active_proc:
+            self._active_proc.terminate()
+            self._active_proc = None
+
     def check_if_track_finished(self) -> bool:
         if self._active_proc:
             return self._active_proc.poll() is not None

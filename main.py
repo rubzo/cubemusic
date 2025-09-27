@@ -1,14 +1,21 @@
 import datetime
 import json
 import os
+import queue
 import random
-import time
-
+import threading
 
 from lib.album_player import AlbumPlayer
 from lib.api import get_url
 from lib.db import create_db, save_db
 from lib.genres import GENRES
+from lib.commands import (
+    parse_command,
+    QuitCommand,
+    CubeCommand,
+    SkipCommand,
+    UncubeCommand,
+)
 
 
 def get_week_id() -> int:
@@ -19,8 +26,8 @@ def get_week_id() -> int:
 
 
 class State:
-    SELECTING_GENRE = 0
-    PLAYING_TRACK = 1
+    IDLE = 0
+    PLAYING = 1
 
 
 class Vibecube:
@@ -32,22 +39,8 @@ class Vibecube:
             self.db = create_db()
             save_db(self.db)
 
-        self.state = State.SELECTING_GENRE
+        self.state = State.IDLE
         self.album_player = None
-
-    def run(self):
-        if self.state == State.SELECTING_GENRE:
-            self.handle_selecting_genre()
-            return False
-        elif self.state == State.PLAYING_TRACK:
-            if self.album_player.check_if_track_finished():
-                if self.album_player.is_finished():
-                    print("Album finished, stopping...")
-                    return True
-                else:
-                    print("Track finished, playing next track...")
-                    self.album_player.play_next_track()
-                    return False
 
     def select_albumish(self, albums: list) -> dict:
         random.shuffle(albums)
@@ -65,16 +58,21 @@ class Vibecube:
         response = get_url(f"/trackGroups?tag={genre}")
         return self.select_albumish(response["results"])
 
-    def handle_selecting_genre(self):
-        print(f"Available genres: {', '.join(GENRES)}")
-        valid = False
+    def handle_command(self, command):
+        if isinstance(command, CubeCommand):
+            self._handle_cube_command(command)
+        elif isinstance(command, SkipCommand):
+            self._handle_skip()
+        elif isinstance(command, UncubeCommand):
+            self._handle_uncube()
+        elif isinstance(command, QuitCommand):
+            self._handle_quit()
 
-        while not valid:
-            genre = input("Select a genre> ")
-            if genre in GENRES:
-                valid = True
-            else:
-                print("Invalid genre!")
+    def _handle_cube_command(self, command: CubeCommand):
+        if self.state == State.PLAYING:
+            self._handle_uncube()
+
+        genre = command.get_genre()
 
         week_id = get_week_id()
 
@@ -90,28 +88,77 @@ class Vibecube:
             genre_info["album_id"] = album_data["id"]
             genre_info["week_assigned"] = week_id
 
+        if self.album_player:
+            self.album_player.stop()
+            self.album_player = None
+
         self.album_player = AlbumPlayer(genre, album_data)
         self.album_player.play_next_track()
 
-        artist_name = self.album_player.get_artist_name()
-        album_name = self.album_player.get_album_name()
-        print(f"Now playing: {artist_name} - {album_name}")
+        # artist_name = self.album_player.get_artist_name()
+        # album_name = self.album_player.get_album_name()
+        # print(f"Now playing: {artist_name} - {album_name}")
 
-        self.state = State.PLAYING_TRACK
+        self.state = State.PLAYING
 
-    def skip(self):
-        if self.state == State.PLAYING_TRACK and self.album_player:
+    def _handle_skip(self):
+        if self.state == State.PLAYING and self.album_player:
             self.album_player.play_next_track()
+
+    def _handle_uncube(self):
+        if self.state == State.PLAYING and self.album_player:
+            self.album_player.stop()
+            self.album_player = None
+            self.state = State.IDLE
+
+    def _handle_quit(self):
+        self._handle_uncube()
+
+
+def run_thread(command_queue, shutdown_event):
+    vibecube = Vibecube()
+
+    while not shutdown_event.is_set():
+        try:
+            command = command_queue.get(timeout=1)
+            vibecube.handle_command(command)
+        except queue.Empty:
+            pass
 
 
 def main():
-    vibecube = Vibecube()
+    print("Available Genres: " + ", ".join(GENRES))
+
+    command_queue = queue.Queue()
+    shutdown_event = threading.Event()
+
+    thread = threading.Thread(target=run_thread, args=(command_queue, shutdown_event))
+    thread.start()
+
+    # Commands:
+
+    # cube <genre>
+    # uncube
+    # skip
+    # quit
 
     while True:
-        exited = vibecube.run()
-        if exited:
+        command_str = input("Enter a command: ")
+
+        try:
+            command = parse_command(command_str)
+        except ValueError:
+            print("Invalid command.")
+            continue
+
+        command_queue.put(command)
+
+        if isinstance(command, QuitCommand):
             break
-        time.sleep(1)
+
+    shutdown_event.set()
+    thread.join()
+    print("Goodbye!")
 
 
 if __name__ == "__main__":
