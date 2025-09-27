@@ -62,9 +62,9 @@ class AlbumPlayer:
         return self._album_data["artist"]["name"]
 
     def _track_finished_callback(self):
+        # The track finished, so the process/thread finished.
+        self._proc = None
         if self._track_index < self._track_count:
-            # The track finished, so the process/thread finished.
-            self._proc = None
             self.play_next_track()
         else:
             self.stop()
