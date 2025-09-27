@@ -2,90 +2,13 @@ import datetime
 import json
 import os
 import random
-import subprocess
 import time
 
-import dotenv
-import requests
 
-
-dotenv.load_dotenv()
-
-API_BASE_URL = "https://mirlo.space/v1"
-
-GENRES = ["pop", "rock", "jazz", "videogame", "ambient"]
-
-
-class AlbumPlayer:
-    def __init__(self, genre: str, album_data: dict):
-        self._genre = genre
-        self._album_data = album_data
-        self._track_index = 0
-        self._track_count = len(album_data["tracks"])
-        self._active_proc = None
-        self._api_key = os.environ["MIRLO_API_KEY"]
-
-    def get_album_name(self) -> str:
-        return self._album_data["title"]
-
-    def get_artist_name(self) -> str:
-        return self._album_data["artist"]["name"]
-
-    def play_next_track(self):
-        if self._active_proc and self._active_proc.poll() is None:
-            self._active_proc.terminate()
-
-        track = self._album_data["tracks"][self._track_index]
-        track_id = track["id"]
-        self._track_index += 1
-
-        self._active_proc = subprocess.Popen(
-            [
-                "ffplay",
-                "-nodisp",
-                "-autoexit",
-                "-infbuf",
-                "-headers",
-                f"mirlo-api-key: {self._api_key}",
-                f"https://mirlo.space/v1/tracks/{track_id}/stream/playlist.m3u8",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-    def check_if_track_finished(self) -> bool:
-        if self._active_proc:
-            return self._active_proc.poll() is not None
-        return True
-
-    def is_finished(self) -> bool:
-        return self._track_index >= self._track_count
-
-
-def get_url(url: str) -> dict:
-    api_key = os.environ["MIRLO_API_KEY"]
-    response = requests.get(
-        f"{API_BASE_URL}{url}",
-        headers={"mirlo-api-key": api_key},
-    )
-    return response.json()
-
-
-def create_db() -> dict:
-    db = {"genres": {}}
-    for genre in GENRES:
-        db["genres"][genre] = {
-            "name": genre,
-            "album_id": None,
-            "week_assigned": None,
-        }
-
-    return db
-
-
-def save_db(db: dict):
-    with open("db.json", "w") as f:
-        json.dump(db, f, indent=4)
+from lib.album_player import AlbumPlayer
+from lib.api import get_url
+from lib.db import create_db, save_db
+from lib.genres import GENRES
 
 
 def get_week_id() -> int:
