@@ -95,6 +95,10 @@ class Vibecube:
         self.album_player = AlbumPlayer(genre, album_data)
         self.album_player.play_next_track()
 
+        genre_info["artist"] = self.album_player.get_artist_name()
+        genre_info["album"] = self.album_player.get_album_name()
+        save_db(self.db)
+
         # artist_name = self.album_player.get_artist_name()
         # album_name = self.album_player.get_album_name()
         # print(f"Now playing: {artist_name} - {album_name}")
@@ -127,7 +131,17 @@ def run_thread(command_queue, shutdown_event):
 
 
 def main():
+    print("Welcome to CubeMusic!")
+    print("---------------------")
+    print()
+    print("Commands:")
+    print(" - cube <genre> [start playing this genre]")
+    print(" - uncube [stop playing]")
+    print(" - skip [skip to next track]")
+    print(" - quit [stop the player and exit]")
+    print()
     print("Available Genres: " + ", ".join(GENRES))
+    print()
 
     command_queue = queue.Queue()
     shutdown_event = threading.Event()
